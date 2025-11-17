@@ -20,10 +20,14 @@ import LocationFavoritesPage from './pages/LocationFavoritesPage';
 import ExportDataPage from './pages/ExportDataPage';
 import MonitoringDashboard from './pages/MonitoringDashboard';
 import SocialFeedPage from './pages/SocialFeedPage';
+import Forum from './pages/Forum';
+import ThreadView from './pages/ThreadView';
+import CreateThread from './pages/CreateThread';
 
 // Context
 import { AuthProvider } from './contexts/AuthContext';
 import { DarkModeProvider } from './contexts/DarkModeContext';
+import { ForumProvider } from './contexts/ForumContext';
 
 // Components
 import ErrorBoundary from './components/ErrorBoundary';
@@ -72,10 +76,11 @@ function App() {
     <ErrorBoundary>
       <DarkModeProvider>
         <AuthProvider>
-          <Router>
-            <RouteTracker />
-            <div className="App">
-              <Routes>
+          <ForumProvider>
+            <Router>
+              <RouteTracker />
+              <div className="App">
+                <Routes>
             {/* Public routes */}
             <Route 
               path="/login" 
@@ -139,9 +144,23 @@ function App() {
               path="/monitoring" 
               element={user ? <MonitoringDashboard /> : <Navigate to="/login" />} 
             />
-            <Route 
-              path="/social-feed" 
-              element={user ? <SocialFeedPage /> : <Navigate to="/login" />} 
+            <Route
+              path="/social-feed"
+              element={user ? <SocialFeedPage /> : <Navigate to="/login" />}
+            />
+
+            {/* Forum routes */}
+            <Route
+              path="/forum"
+              element={<Forum />}
+            />
+            <Route
+              path="/forum/new"
+              element={user ? <CreateThread /> : <Navigate to="/login" />}
+            />
+            <Route
+              path="/forum/thread/:threadId"
+              element={<ThreadView />}
             />
 
             {/* Catch all */}
@@ -175,6 +194,7 @@ function App() {
           />
         </div>
       </Router>
+    </ForumProvider>
     </AuthProvider>
     </DarkModeProvider>
     </ErrorBoundary>

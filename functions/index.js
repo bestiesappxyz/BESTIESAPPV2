@@ -479,8 +479,147 @@ exports.dailyAnalyticsAggregation = functions.pubsub
     });
     
     await db.collection('daily_stats').add(stats);
-    
+
     return null;
+  });
+
+// ========================================
+// FORUM FUNCTIONS
+// ========================================
+
+// Notify thread author when someone replies
+exports.onNewReply = functions.firestore
+  .document('threads/{threadId}/replies/{replyId}')
+  .onCreate(async (snap, context) => {
+    const reply = snap.data();
+    const threadId = context.params.threadId;
+
+    // Get thread details
+    const threadDoc = await db.collection('threads').doc(threadId).get();
+    if (!threadDoc.exists) return;
+
+    const thread = threadDoc.data();
+
+    // Don't notify if replying to own thread
+    if (thread.authorId === reply.authorId) return;
+
+    // Get thread author details
+    const authorDoc = await db.collection('users').doc(thread.authorId).get();
+    if (!authorDoc.exists) return;
+
+    const authorData = authorDoc.data();
+
+    // Create notification
+    await db.collection('notifications').add({
+      userId: thread.authorId,
+      type: 'forum_reply',
+      title: 'New reply to your thread',
+      message: `${reply.authorName} replied to "${thread.title}"`,
+      threadId: threadId,
+      replyId: snap.id,
+      read: false,
+      createdAt: admin.firestore.Timestamp.now()
+    });
+
+    // Send email notification if user has email
+    if (authorData.email && authorData.emailNotifications !== false) {
+      const msg = {
+        to: authorData.email,
+        from: 'notifications@bestiesapp.com',
+        subject: `New reply to your thread: ${thread.title}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #FF69B4;">New Reply on BESTIES Forum</h2>
+            <p><strong>${reply.authorName}</strong> replied to your thread:</p>
+            <h3 style="color: #9370DB;">${thread.title}</h3>
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <p>${reply.content.substring(0, 200)}${reply.content.length > 200 ? '...' : ''}</p>
+            </div>
+            <a href="https://bestiesapp.web.app/forum/thread/${threadId}"
+               style="display: inline-block; background: linear-gradient(to right, #FF69B4, #9370DB);
+                      color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px;">
+              View Thread
+            </a>
+          </div>
+        `,
+      };
+
+      try {
+        await sgMail.send(msg);
+      } catch (error) {
+        console.error('Error sending forum reply email:', error);
+      }
+    }
+  });
+
+// Notify when feature request reaches vote milestones
+exports.onFeatureRequestVote = functions.firestore
+  .document('threads/{threadId}/votes/{userId}')
+  .onWrite(async (change, context) => {
+    const threadId = context.params.threadId;
+
+    // Get thread details
+    const threadDoc = await db.collection('threads').doc(threadId).get();
+    if (!threadDoc.exists) return;
+
+    const thread = threadDoc.data();
+
+    // Only for feature requests
+    if (thread.category !== 'feature-request') return;
+
+    const voteCount = thread.voteCount || 0;
+
+    // Check for milestones (10, 25, 50, 100 votes)
+    const milestones = [10, 25, 50, 100];
+    const milestone = milestones.find(m => voteCount === m);
+
+    if (!milestone) return;
+
+    // Get thread author
+    const authorDoc = await db.collection('users').doc(thread.authorId).get();
+    if (!authorDoc.exists) return;
+
+    const authorData = authorDoc.data();
+
+    // Create notification
+    await db.collection('notifications').add({
+      userId: thread.authorId,
+      type: 'forum_milestone',
+      title: `${milestone} votes on your feature request!`,
+      message: `"${thread.title}" has reached ${milestone} upvotes`,
+      threadId: threadId,
+      milestone: milestone,
+      read: false,
+      createdAt: admin.firestore.Timestamp.now()
+    });
+
+    // Send email notification
+    if (authorData.email && authorData.emailNotifications !== false) {
+      const msg = {
+        to: authorData.email,
+        from: 'notifications@bestiesapp.com',
+        subject: `🎉 Your feature request reached ${milestone} votes!`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #FF69B4;">Milestone Reached! 🎉</h2>
+            <p>Your feature request has reached <strong>${milestone} upvotes</strong>!</p>
+            <h3 style="color: #9370DB;">${thread.title}</h3>
+            <p>The community loves this idea! Keep the momentum going.</p>
+            <a href="https://bestiesapp.web.app/forum/thread/${threadId}"
+               style="display: inline-block; background: linear-gradient(to right, #FF69B4, #9370DB);
+                      color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px;">
+              View Feature Request
+            </a>
+          </div>
+        `,
+      };
+
+      try {
+        await sgMail.send(msg);
+      } catch (error) {
+        console.error('Error sending milestone email:', error);
+      }
+    }
   });
 
 module.exports = exports;
